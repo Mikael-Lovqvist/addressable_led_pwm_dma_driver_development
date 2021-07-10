@@ -11,8 +11,10 @@ Progress
 	Currently TIM16 has been verified to function
 	Next experimentation will be with the DMA transfer.
 
-	We will start with a fixed transfer that we properly "turn off" at the end of it.
+	We will start with a fixed transfer that we properly "turn off" at the end of it.		(Done)
 	(The solution will be to pad the transfer with an ending)
+
+
 
 	Then we will do transfers that will be encoded from another buffer.
 	We can test this by just having a buffer of PWM values that we supply over a smaller DMA buffer for the output

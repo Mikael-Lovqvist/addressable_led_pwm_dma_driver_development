@@ -1,0 +1,6 @@
+
+Pin		Peripheral		Purpose				Analog Discovery 2
+---		----------		-------				------------------
+PA6		TIM16_CH1		Signal output		Analog CH1
+PA7		GPIO			Trigger				Trigger 1
+ 

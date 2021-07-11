@@ -43,10 +43,10 @@ INCLUDE_PATHS += -Ilib/libopencm3/include -Iinc
 
 
 
-LINK_FLAGS = --static -Llib/libopencm3/lib 
+LINK_FLAGS =  -Llib/libopencm3/lib 
 LINK_FLAGS += -Llib/libopencm3/lib/stm32/f1 
-LINK_FLAGS += -T$(LINK_SCRIPT) -lopencm3_stm32f1
-LINK_FLAGS += -Wl,--gc-sections -nostartfiles -nodefaultlibs -nostdlib
+LINK_FLAGS += -T$(LINK_SCRIPT) -lopencm3_stm32f1 #-lc
+LINK_FLAGS += -Wl,--gc-sections -nostartfiles #-nodefaultlibs #-nostdlib
 
 LIBS = libopencm3_stm32f1.a
 

@@ -1,6 +1,9 @@
+#This makefile is derived from a pretty old project and there is lots of errors and bad practices in it
+#TODO: Rewrite by utilizing one of the newer ones for template
+
 #Project settings
 PROJECT_NAME = led_böp
-SOURCES = main.c sine.c
+SOURCES = test_led_driver_on_flash.c led_driver.c uart_driver.c
 BUILD_DIR = build/
 
 PORT ?= /dev/ttyUSB0
@@ -30,12 +33,15 @@ default: $(TARGET_BIN)
 OPENCM3_DIR = lib/libopencm3
 include $(OPENCM3_DIR)/mk/genlink-config.mk
 include $(OPENCM3_DIR)/mk/genlink-rules.mk
+
+#LINK_SCRIPT = stm32f100x6-ram.ld
+
 LINK_SCRIPT = $(LDSCRIPT)
 
 
 
 #Compiler options
-CFLAGS += -g -c -std=gnu99 -Os -Wall -fno-common -ffunction-sections
+CFLAGS += -g -c -std=gnu99 -O4 -Wall -fno-common -ffunction-sections
 CFLAGS += -fdata-sections
 CFLAGS += $(CPU_DEFINES)
 
@@ -62,6 +68,11 @@ vpath %.ld lib/libopencm3/lib/stm32/f1
 vpath %.a lib/libopencm3/lib
 
 
+testing: $(TEST_ELF)
+	./$(TEST_ELF)
+
+
+
 $(TARGET_BIN): $(TARGET_ELF)
 	$(OBJCOPY) -O binary $(TARGET_ELF) $(TARGET_BIN)
 
@@ -71,6 +82,8 @@ $(BUILD_DIR):
 $(TARGET_ELF): $(BUILD_DIR) $(LIBS) $(OBJECTS) $(LINK_SCRIPT)
 	$(CC) $(OBJECTS) $(LINK_FLAGS) -o $(TARGET_ELF)
 
+$(TEST_ELF): $(BUILD_DIR) $(TEST_OBJECTS)
+	$(CC) $(TEST_OBJECTS) $(TEST_LINK_FLAGS) -o $(TEST_ELF)
 
 
 $(OBJECTS): $(BUILD_DIR)%.o: %.c
@@ -97,6 +110,6 @@ deep-clean: clean
 upload: $(TARGET_BIN)
 	stm32flash $(PORT) $(STM32_FLASH_SETTINGS) -w $(TARGET_BIN)
 
-.PHONY: default clean deep-clean libopencm3 upload
+.PHONY: default clean deep-clean libopencm3 upload testing
 
 #makefile_debug:

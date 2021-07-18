@@ -74,7 +74,7 @@ typedef struct addressable_led_driver_instance {
 	} pin_settings;
 
 	struct clock_settings {
-		addressable_led_reg_data				rcc_mask;
+		const addressable_led_reg_data*			rcc_list;
 		int										system_clock;
 	} clock_settings;
 

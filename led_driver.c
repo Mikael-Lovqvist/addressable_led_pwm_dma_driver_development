@@ -1,4 +1,5 @@
 #include "led_driver.h"
+#include "dma_utils.h"
 #include <libopencm3/stm32/dma.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/gpio.h>
@@ -75,26 +76,26 @@ static void addressable_led_fill_buffer(addressable_led_driver_instance* driver,
 
 
 
-//ARM is little endian so when packing (char[]) {0, 0, 0, 1} into a uint32_t we expect the value 0x01000000
-//Because of this, this table calls PACK_BYTES with LSB first
 static uint32_t addressable_led_convert_nibble(int nibble, int bit_0, int bit_1) {
 	switch (nibble) {
 		case 0x0:	return PACK_BYTES(uint32_t, bit_0, bit_0, bit_0, bit_0);
-		case 0x1:	return PACK_BYTES(uint32_t, bit_1, bit_0, bit_0, bit_0);
-		case 0x2:	return PACK_BYTES(uint32_t, bit_0, bit_1, bit_0, bit_0);
-		case 0x3:	return PACK_BYTES(uint32_t, bit_1, bit_1, bit_0, bit_0);
-		case 0x4:	return PACK_BYTES(uint32_t, bit_0, bit_0, bit_1, bit_0);
-		case 0x5:	return PACK_BYTES(uint32_t, bit_1, bit_0, bit_1, bit_0);
+		case 0x1:	return PACK_BYTES(uint32_t, bit_0, bit_0, bit_0, bit_1);
+		case 0x2:	return PACK_BYTES(uint32_t, bit_0, bit_0, bit_1, bit_0);
+		case 0x3:	return PACK_BYTES(uint32_t, bit_0, bit_0, bit_1, bit_1);
+		case 0x4:	return PACK_BYTES(uint32_t, bit_0, bit_1, bit_0, bit_0);
+		case 0x5:	return PACK_BYTES(uint32_t, bit_0, bit_1, bit_0, bit_1);
 		case 0x6:	return PACK_BYTES(uint32_t, bit_0, bit_1, bit_1, bit_0);
-		case 0x7:	return PACK_BYTES(uint32_t, bit_1, bit_1, bit_1, bit_0);
-		case 0x8:	return PACK_BYTES(uint32_t, bit_0, bit_0, bit_0, bit_1);
+		case 0x7:	return PACK_BYTES(uint32_t, bit_0, bit_1, bit_1, bit_1);
+		case 0x8:	return PACK_BYTES(uint32_t, bit_1, bit_0, bit_0, bit_0);
 		case 0x9:	return PACK_BYTES(uint32_t, bit_1, bit_0, bit_0, bit_1);
-		case 0xA:	return PACK_BYTES(uint32_t, bit_0, bit_1, bit_0, bit_1);
-		case 0xB:	return PACK_BYTES(uint32_t, bit_1, bit_1, bit_0, bit_1);
-		case 0xC:	return PACK_BYTES(uint32_t, bit_0, bit_0, bit_1, bit_1);
-		case 0xD:	return PACK_BYTES(uint32_t, bit_1, bit_0, bit_1, bit_1);
-		case 0xE:	return PACK_BYTES(uint32_t, bit_0, bit_1, bit_1, bit_1);
+		case 0xA:	return PACK_BYTES(uint32_t, bit_1, bit_0, bit_1, bit_0);
+		case 0xB:	return PACK_BYTES(uint32_t, bit_1, bit_0, bit_1, bit_1);
+		case 0xC:	return PACK_BYTES(uint32_t, bit_1, bit_1, bit_0, bit_0);
+		case 0xD:	return PACK_BYTES(uint32_t, bit_1, bit_1, bit_0, bit_1);
+		case 0xE:	return PACK_BYTES(uint32_t, bit_1, bit_1, bit_1, bit_0);
 		case 0xF:	return PACK_BYTES(uint32_t, bit_1, bit_1, bit_1, bit_1);
+
+
 	}
 	return 0;
 }
@@ -106,12 +107,43 @@ static uint32_t addressable_led_convert_nibble(int nibble, int bit_0, int bit_1)
 void addressable_led_handle_isr(addressable_led_driver_instance* driver) {
 
 	//TODO RECHECK THIS
+	int status = dma_get_interrupt_flags(driver->dma_settings.peripheral, driver->dma_settings.channel) & (DMA_TCIF | DMA_HTIF);
 
-/*
-	if (!(dma_get_interrupt_flag(driver->dma_settings.peripheral, driver->dma_settings.channel, DMA_TCIF | DMA_HTIF))) {
-		//Only serve half and full transfer IRQ
+
+
+	if (status & DMA_HTIF) {
+		//first half sent, refill first half
+		addressable_led_fill_buffer(driver, true, false);
+
+		if (driver->state.remaining_tail_elements == 0) {
+			dma_disable_circular_mode(driver->dma_settings.peripheral, driver->dma_settings.channel);
+			
+			driver->state.state = PBTS_TAIL;
+
+
+		}
+
+	} else if (status & DMA_TCIF) {
+		//second half sent, refill second half
+		addressable_led_fill_buffer(driver, false, true);
+
+		if (driver->state.state == PBTS_TAIL) {
+			dma_disable_half_transfer_interrupt(driver->dma_settings.peripheral, driver->dma_settings.channel);
+			dma_disable_transfer_complete_interrupt(driver->dma_settings.peripheral, driver->dma_settings.channel);
+			if (driver->transfer_settings.on_transfer_complete) {
+				driver->transfer_settings.on_transfer_complete();
+			}
+			driver->state.state = PBTS_DONE;
+		}
+
+	} else {
 		return;
 	}
+
+	dma_clear_interrupt_flags(driver->dma_settings.peripheral, driver->dma_settings.channel, status);
+
+
+/*
 
 	//We keep track of our state so we can just blindly clear all interrupts relating to this isr
 	dma_clear_interrupt_flags(driver->dma_settings.peripheral, driver->dma_settings.channel, DMA_TCIF | DMA_HTIF);
@@ -148,7 +180,7 @@ void addressable_led_handle_isr(addressable_led_driver_instance* driver) {
 //Todo - automatic retransmission
 addressable_led_error addressable_led_start_transfer(addressable_led_driver_instance* driver) {
 
-	if (driver->state.state == PBTS_READY) {
+	if ((driver->state.state == PBTS_READY) || (driver->state.state == PBTS_DONE)) {
 
 		driver->state.remaining_tail_elements = driver->transfer_settings.minimum_tail;
 		driver->state.remaining_led_elements = driver->transfer_settings.led_transfer_count;
@@ -158,6 +190,34 @@ addressable_led_error addressable_led_start_transfer(addressable_led_driver_inst
 		addressable_led_fill_buffer(driver, true, true);
 
 		driver->state.state = PBTS_RUN;
+
+
+		dma_clear_interrupt_flags(driver->dma_settings.peripheral, driver->dma_settings.channel, DMA_TCIF | DMA_HTIF);
+
+
+		dma_disable_channel(driver->dma_settings.peripheral, driver->dma_settings.channel);
+
+		dma_channel_reset(driver->dma_settings.peripheral, driver->dma_settings.channel);
+
+		dma_set_peripheral_address(driver->dma_settings.peripheral, driver->dma_settings.channel, (uint32_t) driver->timer_settings.output_compare_register);
+		dma_set_memory_address(driver->dma_settings.peripheral, driver->dma_settings.channel, (uint32_t) driver->dma_settings.buffer);
+		dma_set_number_of_data(driver->dma_settings.peripheral, driver->dma_settings.channel, driver->dma_computed.actual_buffer_size);
+		dma_set_read_from_memory(driver->dma_settings.peripheral, driver->dma_settings.channel);
+		dma_enable_memory_increment_mode(driver->dma_settings.peripheral, driver->dma_settings.channel);
+		dma_set_peripheral_size(driver->dma_settings.peripheral, driver->dma_settings.channel, DMA_CCR_PSIZE_16BIT);
+		dma_set_memory_size(driver->dma_settings.peripheral, driver->dma_settings.channel, DMA_CCR_MSIZE_8BIT);
+		dma_set_priority(driver->dma_settings.peripheral, driver->dma_settings.channel, DMA_CCR_PL_VERY_HIGH);
+
+		dma_enable_channel(driver->dma_settings.peripheral, driver->dma_settings.channel);
+
+
+		dma_enable_transfer_complete_interrupt(driver->dma_settings.peripheral, driver->dma_settings.channel);
+		dma_enable_half_transfer_interrupt(driver->dma_settings.peripheral, driver->dma_settings.channel);
+		dma_enable_circular_mode(driver->dma_settings.peripheral, driver->dma_settings.channel);
+
+	
+		//Start transfer
+		*driver->timer_settings.dma_control_register = driver->timer_settings.dma_enable_mask;
 
 
 		return ALE_OK;
@@ -177,8 +237,12 @@ addressable_led_error addressable_led_attach(addressable_led_driver_instance* dr
 	if (driver->state.state == PBTS_CONFIGURED) {
 
 		//Start by enabling clocks if an rcc_mask is present
-		if (driver->clock_settings.rcc_mask) {
-			rcc_periph_clock_enable(driver->clock_settings.rcc_mask);
+		if (driver->clock_settings.rcc_list) {
+			const addressable_led_reg_data* rcc_ptr = driver->clock_settings.rcc_list;
+			while (*rcc_ptr) {
+				rcc_periph_clock_enable(*(rcc_ptr++));
+			}
+			
 		}
 
 		//Then initialize GPIO if a pin mask is set
@@ -202,8 +266,8 @@ addressable_led_error addressable_led_attach(addressable_led_driver_instance* dr
 		timer_enable_oc_preload(driver->timer_settings.peripheral, driver->timer_settings.channel);
 		timer_enable_oc_output(driver->timer_settings.peripheral, driver->timer_settings.channel);
 		timer_set_oc_value(driver->timer_settings.peripheral, driver->timer_settings.channel, driver->transfer_settings.idle_pwm_value);
-
-		timer_set_dma_on_update_event(driver->timer_settings.peripheral);		
+		
+		timer_set_dma_on_update_event(driver->timer_settings.peripheral);
 		timer_enable_counter(driver->timer_settings.peripheral);
 
 		if (driver->timer_settings.have_break_feature) {

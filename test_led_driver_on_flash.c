@@ -6,6 +6,7 @@
 #include <libopencm3/stm32/dma.h>
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/timer.h>
+#include <libopencm3/cm3/systick.h>
 
 #include "led_driver.h"
 #include "uart_driver.h"
@@ -13,10 +14,7 @@
 #define SYSTEM_CLOCK_FREQUENCY		24000000
 #define BAUD_RATE					1000000
 
-addressable_led_type LED_data[2] = {
-	{10, 20, 30},
-	{110, 120, 130},
-};
+addressable_led_type LED_data[14] = {0};
 
 volatile addressable_led_pwm_type LED_DMA_buffer[4*24];
 
@@ -30,7 +28,7 @@ addressable_led_driver_instance LED_driver = (addressable_led_driver_instance) {
 	},
 
 	.clock_settings = {
-		.rcc_mask = 						RCC_GPIOA | RCC_AFIO | RCC_TIM16 | RCC_DMA1,
+		.rcc_list = 						(addressable_led_reg_data[]) {RCC_GPIOA, RCC_AFIO, RCC_TIM16, RCC_DMA1, 0},
 		.system_clock = 					SYSTEM_CLOCK_FREQUENCY
 	},
 
@@ -70,6 +68,13 @@ addressable_led_driver_instance LED_driver = (addressable_led_driver_instance) {
 
 
 
+void configure_systick(int frequency) {
+	systick_set_clocksource(STK_CSR_CLKSOURCE_AHB);
+	systick_set_reload(SYSTEM_CLOCK_FREQUENCY / frequency - 1);
+	systick_interrupt_enable();
+	systick_counter_enable();
+}
+
 
 void configure() {
 	rcc_clock_setup_pll(&rcc_hsi_configs[RCC_CLOCK_HSI_24MHZ]);
@@ -92,6 +97,7 @@ int main(void) {
 
 	configure();
 
+
 	if (addressable_led_configure(&LED_driver) != ALE_OK) {
 		__asm("bkpt 1");	//If we can't configure we will break or hardfault depending on wether a debugger is attached or not
 	}
@@ -101,12 +107,20 @@ int main(void) {
 	}
 
 
-	LED_driver.transfer_settings.led_transfer_count = 1;
-	addressable_led_start_transfer(&LED_driver);
+	for (int i=0; i<14; i++) {
+		LED_data[i].r = i;
+		LED_data[i].g = 14-i;
+		LED_data[i].b = 1;
+	}
+
+	LED_driver.transfer_settings.led_transfer_count = 14;
+
+	configure_systick(100);
 
 
-
-	while(true);
+	while(true) {	
+		//gpio_toggle(GPIOA, GPIO6);
+	}
 
 
 	return 0;
@@ -128,3 +142,8 @@ void dma1_channel6_isr(void) {
 	addressable_led_handle_isr(&LED_driver);
 }
 
+
+void sys_tick_handler(void) {
+	LED_driver.state.state = PBTS_READY;
+	addressable_led_start_transfer(&LED_driver);
+}

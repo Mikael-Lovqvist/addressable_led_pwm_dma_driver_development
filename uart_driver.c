@@ -9,6 +9,7 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/dma.h>
 #include <libopencm3/cm3/nvic.h>
+#include "dma_utils.h"
 #include "uart_driver.h"
 
 static volatile struct {
@@ -27,10 +28,6 @@ static volatile struct {
 } rx_buf;
 
 
-//Maybe this one should live in a different translation unit but for now here is good.
-uint32_t dma_get_interrupt_flags(uint32_t dma, uint8_t stream) {
-	return (DMA_ISR(dma) >> DMA_FLAG_OFFSET(stream)) & DMA_FLAGS;
-}
 
 
 void configure_uart(int baudrate) {

@@ -3,7 +3,7 @@
 
 #Project settings
 PROJECT_NAME = led_böp
-SOURCES = test_led_driver_on_flash.c led_driver.c uart_driver.c
+SOURCES = test_led_driver_on_flash.c led_driver.c uart_driver.c dma_utils.c
 BUILD_DIR = build/
 
 PORT ?= /dev/ttyUSB0

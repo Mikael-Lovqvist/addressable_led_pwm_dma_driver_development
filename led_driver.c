@@ -106,78 +106,50 @@ static uint32_t addressable_led_convert_nibble(int nibble, int bit_0, int bit_1)
 
 void addressable_led_handle_isr(addressable_led_driver_instance* driver) {
 
-	//TODO RECHECK THIS
 	int status = dma_get_interrupt_flags(driver->dma_settings.peripheral, driver->dma_settings.channel) & (DMA_TCIF | DMA_HTIF);
-
-
+	dma_clear_interrupt_flags(driver->dma_settings.peripheral, driver->dma_settings.channel, status);
 
 	if (status & DMA_HTIF) {
-		//first half sent, refill first half
-		addressable_led_fill_buffer(driver, true, false);
+		if ((driver->state.state == PBTS_RUN) || ((driver->state.state == PBTS_TAIL))) {
+			//first half sent, refill first half
+			addressable_led_fill_buffer(driver, true, false);
 
-		if (driver->state.remaining_tail_elements == 0) {
-			dma_disable_circular_mode(driver->dma_settings.peripheral, driver->dma_settings.channel);
-			
-			driver->state.state = PBTS_TAIL;
+			if (driver->state.remaining_tail_elements == 0) {
+				dma_disable_circular_mode(driver->dma_settings.peripheral, driver->dma_settings.channel);
+				
+				driver->state.state = PBTS_TAIL;
 
 
+			}
 		}
 
 	} else if (status & DMA_TCIF) {
-		//second half sent, refill second half
-		addressable_led_fill_buffer(driver, false, true);
 
-		if (driver->state.state == PBTS_TAIL) {
-			dma_disable_half_transfer_interrupt(driver->dma_settings.peripheral, driver->dma_settings.channel);
-			dma_disable_transfer_complete_interrupt(driver->dma_settings.peripheral, driver->dma_settings.channel);
-			if (driver->transfer_settings.on_transfer_complete) {
-				driver->transfer_settings.on_transfer_complete();
+		if ((driver->state.state == PBTS_RUN) || ((driver->state.state == PBTS_TAIL))) {
+
+			//second half sent, refill second half
+			addressable_led_fill_buffer(driver, false, true);
+
+			if (driver->state.state == PBTS_TAIL) {
+				*driver->timer_settings.dma_control_register &= ~driver->timer_settings.dma_enable_mask;
+				dma_disable_half_transfer_interrupt(driver->dma_settings.peripheral, driver->dma_settings.channel);
+				dma_disable_transfer_complete_interrupt(driver->dma_settings.peripheral, driver->dma_settings.channel);
+				//BUG: We should not need to set the PWM value here, the tail should have fixed this.
+				timer_set_oc_value(driver->timer_settings.peripheral, driver->timer_settings.channel, driver->transfer_settings.idle_pwm_value);
+
+				if (driver->transfer_settings.on_transfer_complete) {
+					driver->transfer_settings.on_transfer_complete();
+				}
+				driver->state.state = PBTS_DONE;
 			}
-			driver->state.state = PBTS_DONE;
 		}
-
 	} else {
 		return;
 	}
 
-	dma_clear_interrupt_flags(driver->dma_settings.peripheral, driver->dma_settings.channel, status);
-
-
-/*
-
-	//We keep track of our state so we can just blindly clear all interrupts relating to this isr
-	dma_clear_interrupt_flags(driver->dma_settings.peripheral, driver->dma_settings.channel, DMA_TCIF | DMA_HTIF);
-
-	if (driver->state.state == PBTS_RUN1) {				//First half done
-		addressable_led_fill_buffer(driver);
-		driver->state.state = PBTS_RUN2;
-
-		if (driver->state.remaining_tail_elements == 0) {
-			//We are done with everything so we will turn off circular mode and change state to tail
-			//so that the next IRQ can be used to clean up and call the transfer_complete function if set
-			DMA_CCR(driver->dma_settings.peripheral, driver->dma_settings.channel) &= ~DMA_CCR_CIRC;
-			driver->state.state = PBTS_TAIL;
-		}
-
-	} else if (driver->state.state == PBTS_RUN2) {		//Second half done		
-		addressable_led_fill_buffer(driver);
-		driver->state.state = PBTS_RUN1;
-
-	} else if (driver->state.state == PBTS_TAIL) {
-		//All done - turn off IRQs and call completion function if set
-		dma_disable_half_transfer_interrupt(driver->dma_settings.peripheral, driver->dma_settings.channel);
-		dma_disable_transfer_complete_interrupt(driver->dma_settings.peripheral, driver->dma_settings.channel);
-		if (driver->transfer_settings.on_transfer_complete) {
-			driver->transfer_settings.on_transfer_complete();
-		}
-		driver->state.state = PBTS_DONE;
-	}
-*/
 
 }
 
-
-//Todo - automatic retransmission
 addressable_led_error addressable_led_start_transfer(addressable_led_driver_instance* driver) {
 
 	if ((driver->state.state == PBTS_READY) || (driver->state.state == PBTS_DONE)) {

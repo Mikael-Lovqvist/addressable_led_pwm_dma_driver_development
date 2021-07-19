@@ -14,7 +14,9 @@
 #define SYSTEM_CLOCK_FREQUENCY		24000000
 #define BAUD_RATE					1000000
 
-addressable_led_type LED_data[14] = {0};
+#define LED_Count					216
+
+addressable_led_type LED_data[LED_Count] = {0};
 
 volatile addressable_led_pwm_type LED_DMA_buffer[4*24];
 
@@ -55,7 +57,7 @@ addressable_led_driver_instance LED_driver = (addressable_led_driver_instance) {
 
 	.transfer_settings = {
 		.led_buffer = 						LED_data,
-		.minimum_tail = 					1,
+		.minimum_tail = 					10,
 		.idle_pwm_value = 					0,
 		.bit_low_value = 					6,
 		.bit_high_value = 					14,
@@ -107,15 +109,11 @@ int main(void) {
 	}
 
 
-	for (int i=0; i<14; i++) {
-		LED_data[i].r = i;
-		LED_data[i].g = 14-i;
-		LED_data[i].b = 1;
-	}
 
-	LED_driver.transfer_settings.led_transfer_count = 14;
+	LED_driver.transfer_settings.led_transfer_count = LED_Count;
 
-	configure_systick(100);
+	configure_systick(10);
+	//sys_tick_handler();
 
 
 	while(true) {	
@@ -144,6 +142,23 @@ void dma1_channel6_isr(void) {
 
 
 void sys_tick_handler(void) {
-	LED_driver.state.state = PBTS_READY;
+	static int rolling = 0;
+
+	rolling = (rolling + 1) % LED_Count;
+
+	for (int i=0; i<LED_Count; i++) {
+		if (i == rolling) {
+
+			LED_data[i].r = 100;
+			LED_data[i].g = 255;
+			LED_data[i].b = 50;
+		} else {
+			LED_data[i].r = 50;
+			LED_data[i].g = 0;
+			LED_data[i].b = 30;
+
+		}
+	}
+
 	addressable_led_start_transfer(&LED_driver);
 }

@@ -7,6 +7,7 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/cm3/systick.h>
+#include <libopencmsis/core_cm3.h>
 
 #include "led_driver.h"
 #include "uart_driver.h"
@@ -19,6 +20,13 @@
 addressable_led_type LED_data[LED_Count] = {0};
 
 volatile addressable_led_pwm_type LED_DMA_buffer[4*24];
+
+volatile bool ready_for_next = false;
+
+
+
+//5 x 7 font, encoded as 5 bytes with bitfields for the column
+const char digit_font[] = {0x1c, 0x3e, 0x41, 0x3e, 0x1c, 0x44, 0x7e, 0x7f, 0x40, 0x0, 0x46, 0x63, 0x71, 0x5b, 0x6e, 0x36, 0x63, 0x49, 0x6b, 0x3e, 0x18, 0x54, 0x7e, 0x7f, 0x50, 0x27, 0x4f, 0x49, 0x79, 0x31, 0x38, 0x7e, 0x47, 0x7b, 0x39, 0x47, 0x71, 0x7d, 0x4f, 0x3, 0x36, 0x7f, 0x4b, 0x7f, 0x36, 0x4e, 0x6f, 0x71, 0x3f, 0xe};
 
 
 addressable_led_driver_instance LED_driver = (addressable_led_driver_instance) {
@@ -92,7 +100,10 @@ void configure() {
 
 }
 
+const int column_offset[] = {4, 16, 28, 40, 52, 64, 76, 88, 100, 112, 122, 132, 142, 150, 160, 170, 180, 190, 198, 208};
 
+int hours = 4;
+int minutes = 20;
 
 
 int main(void) {
@@ -116,8 +127,120 @@ int main(void) {
 	//sys_tick_handler();
 
 
+
+	//TODO - figure out a synchronization method where we can update LEDs without risking updating half an LED
+
+
+/*
+	for (int i=0; i<LED_Count; i++) {
+		LED_data[i] = (addressable_led_type) {0, 0, 0};
+	}
+
+
+
+*/
+
+/*
+	for (int i=0; i<8; i++) {
+		for (int c=0; c<20; c++) {
+			LED_data[column_offset[c]+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		}
+		LED_data[4+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[16+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[28+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[40+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[52+i] = (addressable_led_type) {255-i*30, i*30, 0};
+
+		LED_data[64+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[76+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[88+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[100+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[112+i] = (addressable_led_type) {255-i*30, i*30, 0};
+
+		LED_data[122+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[132+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[142+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[150+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[160+i] = (addressable_led_type) {255-i*30, i*30, 0};
+
+		LED_data[170+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[180+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[190+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[198+i] = (addressable_led_type) {255-i*30, i*30, 0};
+		LED_data[208+i] = (addressable_led_type) {255-i*30, i*30, 0};
+
+	}
+
+
+	//Bottom drawers
+	LED_data[120] = (addressable_led_type) {0, 255, 100};
+	LED_data[130] = (addressable_led_type) {0, 255, 100};
+	LED_data[140] = (addressable_led_type) {0, 255, 100};
+	LED_data[158] = (addressable_led_type) {0, 255, 100};
+	
+	//Four drawers
+	LED_data[120+1] = (addressable_led_type) {0, 0, 255};
+	LED_data[130+1] = (addressable_led_type) {0, 0, 255};
+	LED_data[140+1] = (addressable_led_type) {0, 0, 255};
+	LED_data[158+1] = (addressable_led_type) {0, 0, 255};
+
+
+	//bottom drawers
+	LED_data[168] = (addressable_led_type) {0, 255, 100};
+	LED_data[178] = (addressable_led_type) {0, 255, 100};
+	LED_data[188] = (addressable_led_type) {0, 255, 100};
+	LED_data[206] = (addressable_led_type) {0, 255, 100};
+	
+	//Four drawers
+	LED_data[168+1] = (addressable_led_type) {0, 0, 255};
+	LED_data[178+1] = (addressable_led_type) {0, 0, 255};
+	LED_data[188+1] = (addressable_led_type) {0, 0, 255};
+	LED_data[206+1] = (addressable_led_type) {0, 0, 255};*/
+
+
 	while(true) {	
 		//gpio_toggle(GPIOA, GPIO6);
+
+		//For whatever reason, calling the built in div function hardfaults and it also generated
+		//a crazy amount of instructions! We only need one call to sdiv/udiv
+		
+		int digits[4] = {hours / 10, hours % 10, minutes / 10, minutes % 10};
+
+		for (int i=0; i<8; i++) {
+			for (int c=0; c<20; c++) {
+
+				//div_t d_c = div(c, 5);	//d_c.quot is digit index and d_c.rem is column
+				int d_c_quot = 3 - c / 5;
+				int d_c_rem = 4 - c % 5;
+
+
+				bool fill = digit_font[digits[d_c_quot]*5 + d_c_rem] & (1 << (7-i));
+				
+
+				if (fill) {
+					LED_data[column_offset[c]+i] = (addressable_led_type) {255-i*30, i*30, 0};
+				} else {
+					LED_data[column_offset[c]+i] = (addressable_led_type) {0, 1, 2};
+				}
+			}
+		}
+
+
+
+		while (!ready_for_next) {
+			__WFI();
+		}
+
+		ready_for_next = false;
+		addressable_led_start_transfer(&LED_driver);
+
+
+		minutes = (minutes + 1) % 60;
+		if (minutes == 0) {
+			hours = (hours + 1) % 24;
+		}
+
+
 	}
 
 
@@ -129,36 +252,18 @@ int main(void) {
 void hard_fault_handler() {
 
 	while(true) {
+		for(volatile int i=0; i<1000000; i++);
 		write("uh-oh! ", 7);
 		write_flush();
-		for(volatile int i=0; i<1000000; i++);
 	}
 
 }
 
-void dma1_channel6_isr(void) {
-	addressable_led_handle_isr(&LED_driver);
+void dma1_channel6_isr(void) {	
+	addressable_led_handle_isr(&LED_driver);	
 }
 
 
 void sys_tick_handler(void) {
-	static int rolling = 0;
-
-	rolling = (rolling + 1) % LED_Count;
-
-	for (int i=0; i<LED_Count; i++) {
-		if (i == rolling) {
-
-			LED_data[i].r = 100;
-			LED_data[i].g = 255;
-			LED_data[i].b = 50;
-		} else {
-			LED_data[i].r = 50;
-			LED_data[i].g = 0;
-			LED_data[i].b = 30;
-
-		}
-	}
-
-	addressable_led_start_transfer(&LED_driver);
+	ready_for_next = true;	
 }

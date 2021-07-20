@@ -135,7 +135,7 @@ void addressable_led_handle_isr(addressable_led_driver_instance* driver) {
 				dma_disable_half_transfer_interrupt(driver->dma_settings.peripheral, driver->dma_settings.channel);
 				dma_disable_transfer_complete_interrupt(driver->dma_settings.peripheral, driver->dma_settings.channel);
 				//BUG: We should not need to set the PWM value here, the tail should have fixed this.
-				timer_set_oc_value(driver->timer_settings.peripheral, driver->timer_settings.channel, driver->transfer_settings.idle_pwm_value);
+				//timer_set_oc_value(driver->timer_settings.peripheral, driver->timer_settings.channel, driver->transfer_settings.idle_pwm_value);
 
 				if (driver->transfer_settings.on_transfer_complete) {
 					driver->transfer_settings.on_transfer_complete();

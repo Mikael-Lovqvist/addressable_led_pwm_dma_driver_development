@@ -41,7 +41,7 @@ LINK_SCRIPT = $(LDSCRIPT)
 
 
 #Compiler options
-CFLAGS += -g -c -std=gnu99 -O4 -Wall -fno-common -ffunction-sections
+CFLAGS += -g -c -std=gnu99 -Os -Wall -flto -fno-common -ffunction-sections
 CFLAGS += -fdata-sections
 CFLAGS += $(CPU_DEFINES)
 
@@ -49,7 +49,7 @@ INCLUDE_PATHS += -Ilib/libopencm3/include -Iinc
 
 
 
-LINK_FLAGS =  -Llib/libopencm3/lib 
+LINK_FLAGS =  -Llib/libopencm3/lib  -flto
 LINK_FLAGS += -Llib/libopencm3/lib/stm32/f1 
 LINK_FLAGS += -T$(LINK_SCRIPT) -lopencm3_stm32f1 #-lc
 LINK_FLAGS += -Wl,--gc-sections -nostartfiles #-nodefaultlibs #-nostdlib

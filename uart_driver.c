@@ -9,6 +9,7 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/dma.h>
 #include <libopencm3/cm3/nvic.h>
+#include <libopencmsis/core_cm3.h>
 #include "dma_utils.h"
 #include "uart_driver.h"
 
@@ -25,12 +26,15 @@ static volatile struct {
 	int balance;	//Used to track overrun
 	bool had_overrun;
 	char buf[fifo_RX_BUF_SIZE];
+	uart_event_callback_type transfer_complete_cb;
 } rx_buf;
 
 
 
 
 void configure_uart(int baudrate) {
+
+	rx_buf.transfer_complete_cb = 0;
 
 	rcc_periph_clock_enable(RCC_DMA1);
 	rcc_periph_clock_enable(RCC_USART1);
@@ -54,7 +58,7 @@ void configure_uart(int baudrate) {
 	dma_set_memory_size(DMA1, DMA_CHANNEL4, DMA_CCR_MSIZE_8BIT);
 	dma_set_priority(DMA1, DMA_CHANNEL4, DMA_CCR_PL_VERY_HIGH);
 
-	//Set up reception dMA
+	//Set up reception DMA
 	dma_channel_reset(DMA1, DMA_CHANNEL5);
 	dma_set_peripheral_address(DMA1, DMA_CHANNEL5, (uint32_t) &USART1_DR);
 	dma_set_read_from_peripheral(DMA1, DMA_CHANNEL5);
@@ -66,6 +70,60 @@ void configure_uart(int baudrate) {
 
 	dma_set_memory_address(DMA1, DMA_CHANNEL5, (uint32_t) rx_buf.buf);
 	dma_set_number_of_data(DMA1, DMA_CHANNEL5, fifo_RX_BUF_SIZE);
+
+	dma_enable_half_transfer_interrupt(DMA1, DMA_CHANNEL5);
+	dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL5);
+
+	dma_enable_channel(DMA1, DMA_CHANNEL5);
+
+
+	nvic_enable_irq(NVIC_DMA1_CHANNEL5_IRQ);
+	usart_enable_rx_dma(USART1);
+
+}
+
+
+
+
+//Continous transfer to address
+void configure_uart2(int baudrate, uint32_t target, uint32_t target_size, uart_event_callback_type transfer_complete_cb) {
+
+	rx_buf.transfer_complete_cb = transfer_complete_cb;
+
+	rcc_periph_clock_enable(RCC_DMA1);
+	rcc_periph_clock_enable(RCC_USART1);
+
+
+	usart_set_baudrate(USART1, baudrate);
+	usart_set_databits(USART1, 8);
+	usart_set_stopbits(USART1, USART_STOPBITS_1);
+	usart_set_mode(USART1, USART_MODE_RX | USART_MODE_TX);
+	usart_set_parity(USART1, USART_PARITY_NONE);
+	usart_set_flow_control(USART1, USART_FLOWCONTROL_NONE);
+	usart_enable(USART1);
+
+
+	//Set up transmission DMA
+	dma_channel_reset(DMA1, DMA_CHANNEL4);
+	dma_set_peripheral_address(DMA1, DMA_CHANNEL4, (uint32_t) &USART1_DR);
+	dma_set_read_from_memory(DMA1, DMA_CHANNEL4);
+	dma_enable_memory_increment_mode(DMA1, DMA_CHANNEL4);
+	dma_set_peripheral_size(DMA1, DMA_CHANNEL4, DMA_CCR_PSIZE_8BIT);
+	dma_set_memory_size(DMA1, DMA_CHANNEL4, DMA_CCR_MSIZE_8BIT);
+	dma_set_priority(DMA1, DMA_CHANNEL4, DMA_CCR_PL_VERY_HIGH);
+
+	//Set up reception DMA
+	dma_channel_reset(DMA1, DMA_CHANNEL5);
+	dma_set_peripheral_address(DMA1, DMA_CHANNEL5, (uint32_t) &USART1_DR);
+	dma_set_read_from_peripheral(DMA1, DMA_CHANNEL5);
+	dma_enable_memory_increment_mode(DMA1, DMA_CHANNEL5);
+	dma_set_peripheral_size(DMA1, DMA_CHANNEL5, DMA_CCR_PSIZE_8BIT);
+	dma_set_memory_size(DMA1, DMA_CHANNEL5, DMA_CCR_MSIZE_8BIT);
+	dma_enable_circular_mode(DMA1, DMA_CHANNEL5);
+	dma_set_priority(DMA1, DMA_CHANNEL5, DMA_CCR_PL_VERY_HIGH);
+
+	dma_set_memory_address(DMA1, DMA_CHANNEL5, target);
+	dma_set_number_of_data(DMA1, DMA_CHANNEL5, target_size);
 
 	dma_enable_half_transfer_interrupt(DMA1, DMA_CHANNEL5);
 	dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL5);
@@ -160,6 +218,19 @@ size_t rx_get_available() {
 
 }
 
+void read_blocking(char* target, size_t required_count) {
+	size_t remaining = required_count;
+	while (remaining) {		
+		size_t buf_count = read(target, remaining);	
+		if (buf_count) {
+			remaining -= buf_count;
+			target += buf_count;
+		} else {
+			__WFI();
+		}
+				
+	}
+}
 
 size_t read(char* target, size_t count) {	
 
@@ -187,10 +258,21 @@ size_t read(char* target, size_t count) {
 }
 
 
+bool rx_had_overrun() {
+	return rx_buf.had_overrun;
+}
 
 
 void dma1_channel5_isr(void) {
 	uint32_t isr_flags = dma_get_interrupt_flags(DMA1, DMA_CHANNEL5) & (DMA_TCIF | DMA_HTIF);
+
+
+	if (isr_flags & DMA_TCIF) {
+		if (rx_buf.transfer_complete_cb) {
+			rx_buf.transfer_complete_cb();
+		}
+	}
+
 
 	if (isr_flags) {
 

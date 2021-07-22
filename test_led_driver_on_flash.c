@@ -23,8 +23,6 @@ volatile addressable_led_pwm_type LED_DMA_buffer[4*24];
 
 volatile bool ready_for_next = false;
 
-
-
 //5 x 7 font, encoded as 5 bytes with bitfields for the column
 const char digit_font[] = {0x1c, 0x3e, 0x41, 0x3e, 0x1c, 0x44, 0x7e, 0x7f, 0x40, 0x0, 0x46, 0x63, 0x71, 0x5b, 0x6e, 0x36, 0x63, 0x49, 0x6b, 0x3e, 0x18, 0x54, 0x7e, 0x7f, 0x50, 0x27, 0x4f, 0x49, 0x79, 0x31, 0x38, 0x7e, 0x47, 0x7b, 0x39, 0x47, 0x71, 0x7d, 0x4f, 0x3, 0x36, 0x7f, 0x4b, 0x7f, 0x36, 0x4e, 0x6f, 0x71, 0x3f, 0xe};
 
@@ -77,12 +75,17 @@ addressable_led_driver_instance LED_driver = (addressable_led_driver_instance) {
 
 
 
-
 void configure_systick(int frequency) {
 	systick_set_clocksource(STK_CSR_CLKSOURCE_AHB);
 	systick_set_reload(SYSTEM_CLOCK_FREQUENCY / frequency - 1);
 	systick_interrupt_enable();
 	systick_counter_enable();
+}
+
+volatile bool got_data = false;
+
+void set_rx_flag() {
+	got_data = true;
 }
 
 
@@ -95,8 +98,8 @@ void configure() {
 	gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_FLOAT, GPIO_USART1_RX);
 	gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX);
 
-	configure_uart(BAUD_RATE);
-
+	//Todo - uart driver need to be more flexible so we don't need to call configure_uart2
+	configure_uart2(BAUD_RATE, (uint32_t) LED_data, 3 * LED_Count,  set_rx_flag);
 
 }
 
@@ -104,6 +107,32 @@ const int column_offset[] = {4, 16, 28, 40, 52, 64, 76, 88, 100, 112, 122, 132, 
 
 int hours = 4;
 int minutes = 20;
+
+
+void red_blink_of_death() {
+	bool red = true;
+	while (true) {
+		for (int i=0; i<LED_Count; i++) {
+			if (red) {
+				LED_data[i] = (addressable_led_type) {5, 0, 0};
+			} else {
+				LED_data[i] = (addressable_led_type) {0, 0, 0};
+			}
+		}
+
+		red = !red;
+
+		while (!ready_for_next) {
+			__WFI();
+		}
+
+		ready_for_next = false;
+		addressable_led_start_transfer(&LED_driver);
+
+		for (volatile int i=0; i <1000000; i++);
+
+	}
+}
 
 
 int main(void) {
@@ -119,129 +148,33 @@ int main(void) {
 		__asm("bkpt 2");	//If we can't attach hw we will break or hardfault depending on wether a debugger is attached or not
 	}
 
-
-
 	LED_driver.transfer_settings.led_transfer_count = LED_Count;
+	configure_systick(100);
 
-	configure_systick(10);
-	//sys_tick_handler();
-
-
-
-	//TODO - figure out a synchronization method where we can update LEDs without risking updating half an LED
+	//Startup delay makes it easier to reflash with the version of stm32flash I use because if it gets somee crap in the buffer it doesn't recognize the boot loader
+	for (volatile int i=0; i <100000; i++);
 
 
-/*
-	for (int i=0; i<LED_Count; i++) {
-		LED_data[i] = (addressable_led_type) {0, 0, 0};
-	}
-
-
-
-*/
-
-/*
-	for (int i=0; i<8; i++) {
-		for (int c=0; c<20; c++) {
-			LED_data[column_offset[c]+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		}
-		LED_data[4+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[16+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[28+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[40+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[52+i] = (addressable_led_type) {255-i*30, i*30, 0};
-
-		LED_data[64+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[76+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[88+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[100+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[112+i] = (addressable_led_type) {255-i*30, i*30, 0};
-
-		LED_data[122+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[132+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[142+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[150+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[160+i] = (addressable_led_type) {255-i*30, i*30, 0};
-
-		LED_data[170+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[180+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[190+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[198+i] = (addressable_led_type) {255-i*30, i*30, 0};
-		LED_data[208+i] = (addressable_led_type) {255-i*30, i*30, 0};
-
-	}
-
-
-	//Bottom drawers
-	LED_data[120] = (addressable_led_type) {0, 255, 100};
-	LED_data[130] = (addressable_led_type) {0, 255, 100};
-	LED_data[140] = (addressable_led_type) {0, 255, 100};
-	LED_data[158] = (addressable_led_type) {0, 255, 100};
-	
-	//Four drawers
-	LED_data[120+1] = (addressable_led_type) {0, 0, 255};
-	LED_data[130+1] = (addressable_led_type) {0, 0, 255};
-	LED_data[140+1] = (addressable_led_type) {0, 0, 255};
-	LED_data[158+1] = (addressable_led_type) {0, 0, 255};
-
-
-	//bottom drawers
-	LED_data[168] = (addressable_led_type) {0, 255, 100};
-	LED_data[178] = (addressable_led_type) {0, 255, 100};
-	LED_data[188] = (addressable_led_type) {0, 255, 100};
-	LED_data[206] = (addressable_led_type) {0, 255, 100};
-	
-	//Four drawers
-	LED_data[168+1] = (addressable_led_type) {0, 0, 255};
-	LED_data[178+1] = (addressable_led_type) {0, 0, 255};
-	LED_data[188+1] = (addressable_led_type) {0, 0, 255};
-	LED_data[206+1] = (addressable_led_type) {0, 0, 255};*/
-
-
-	while(true) {	
-		//gpio_toggle(GPIOA, GPIO6);
-
-		//For whatever reason, calling the built in div function hardfaults and it also generated
-		//a crazy amount of instructions! We only need one call to sdiv/udiv
+	while(true) {
+		//We sync by sending ASCII SYN
+		USART1_DR = 0x16;
 		
-		int digits[4] = {hours / 10, hours % 10, minutes / 10, minutes % 10};
-
-		for (int i=0; i<8; i++) {
-			for (int c=0; c<20; c++) {
-
-				//div_t d_c = div(c, 5);	//d_c.quot is digit index and d_c.rem is column
-				int d_c_quot = 3 - c / 5;
-				int d_c_rem = 4 - c % 5;
-
-
-				bool fill = digit_font[digits[d_c_quot]*5 + d_c_rem] & (1 << (7-i));
-				
-
-				if (fill) {
-					LED_data[column_offset[c]+i] = (addressable_led_type) {255-i*30, i*30, 0};
-				} else {
-					LED_data[column_offset[c]+i] = (addressable_led_type) {0, 1, 2};
-				}
-			}
+		//wait for data
+		while (!got_data) {
+			__WFI();
 		}
+		got_data = false;
 
-
-
+		//Make sure we are ready to send
 		while (!ready_for_next) {
 			__WFI();
 		}
-
 		ready_for_next = false;
+
 		addressable_led_start_transfer(&LED_driver);
 
-
-		minutes = (minutes + 1) % 60;
-		if (minutes == 0) {
-			hours = (hours + 1) % 24;
-		}
-
-
 	}
+	
 
 
 	return 0;
